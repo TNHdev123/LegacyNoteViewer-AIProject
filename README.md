@@ -7,7 +7,7 @@ Then use the browser or HTML viewer to run the file
 
 # CSV Support
 You can upload \var\mobile\Library\Notes\note.sqlite
-and You can also upload the converted .csv files.
+and You can also upload the converted .csv file.
 
 # Codding by AI
 This tool is made by Google Gemini AI.
