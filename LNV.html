@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>LegacyNoteViewer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+    <style>
+        :root { --leather: #3d2b1f; --paper: #fdf7c3; --line: #e3d3a3; --text: #443322; --highlight: #d35400; }
+        body { background: #222; margin: 0; font-family: "Marker Felt", "Helvetica Neue", "PingFang HK", "Meiryo", sans-serif; color: var(--text); }
+        
+        #loadingLayer { position: fixed; top: 0; left: 0; width: 100%; height: 4px; background: #333; z-index: 2000; }
+        #progressBar { width: 0%; height: 100%; background: #ffaa00; transition: width 0.3s; }
+
+        .app-container { max-width: 600px; margin: 10px auto; background: var(--leather); padding: 8px; border-radius: 12px; min-height: 95vh; display: flex; flex-direction: column; box-sizing: border-box; }
+        .paper { background: var(--paper); background-image: linear-gradient(var(--line) 1px, transparent 1px); background-size: 100% 28px; flex-grow: 1; border-radius: 5px; padding: 40px 15px 15px 50px; position: relative; box-shadow: inset 0 0 10px rgba(0,0,0,0.1); overflow-x: hidden; }
+        .paper::before { content: ""; position: absolute; left: 42px; top: 0; bottom: 0; width: 2px; border-left: 1px solid #ff9999; border-right: 1px solid #ff9999; }
+        
+        .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding: 0 5px; }
+        h1 { margin: 0; font-size: 20px; color: #eee; text-shadow: 1px 1px 2px #000; }
+        #langSelect { background: #665544; color: white; border: 1px solid #887755; padding: 5px; border-radius: 4px; font-size: 12px; }
+
+        .tutorial { background: rgba(0,0,0,0.2); color: #ddd; padding: 15px; border-radius: 8px; font-size: 14px; line-height: 1.6; margin-bottom: 15px; border-left: 4px solid var(--highlight); transition: all 0.5s ease; }
+        .key { color: #ffaa00; font-weight: bold; }
+
+        .file-box { background: #fff; padding: 20px; border-radius: 8px; text-align: center; border: 2px dashed #887755; margin-bottom: 10px; }
+        #statusMsg { text-align: center; font-size: 14px; margin: 10px 0; color: #eee; min-height: 1.2em; }
+
+        .controls { display: none; flex-direction: column; gap: 8px; margin-bottom: 15px; }
+        #searchBar, #sortOrder { width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #ccc; font-size: 16px; box-sizing: border-box; }
+
+        .note-item { padding: 12px 0; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .note-info { flex: 1; cursor: pointer; min-width: 0; }
+        .note-title { font-size: 17px; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+        .list-copy-btn { background: #887755; color: white; border: none; padding: 8px 14px; border-radius: 5px; cursor: pointer; font-size: 13px; }
+
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 1000; align-items: center; justify-content: center; }
+        .modal-content { background: var(--paper); width: 92%; height: 85%; border-radius: 10px; display: flex; flex-direction: column; padding: 10px 10px 10px 42px; position: relative; box-sizing: border-box; background-image: linear-gradient(var(--line) 1px, transparent 1px); background-size: 100% 28px; }
+        #noteEditor { flex-grow: 1; border: none; background: transparent; font-size: 19px; line-height: 28px; resize: none; outline: none; font-family: inherit; padding-top: 30px; color: var(--text); }
+        .close-btn { position: absolute; top: 5px; right: 15px; font-size: 32px; cursor: pointer; color: #887755; z-index: 10; }
+        
+        .toolbar-grid { 
+            background: #3d2b1f; padding: 10px; border-bottom-left-radius: 10px; border-bottom-right-radius: 10px; 
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; 
+        }
+        .toolbar-grid button { 
+            padding: 12px 2px; border: none; border-radius: 4px; background: #665544; color: white; cursor: pointer; font-size: 11px; font-weight: bold; 
+        }
+        .toolbar-grid .copy-full-btn { background: #cc8800; }
+        .toolbar-grid .reset-btn { background: #884444; }
+    </style>
+</head>
+<body>
+
+<div id="loadingLayer"><div id="progressBar"></div></div>
+
+<div class="app-container">
+    <div class="top-bar">
+        <h1>LegacyNoteViewer</h1>
+        <select id="langSelect" onchange="changeLang()">
+            <option value="en" selected>English</option>
+            <option value="zh">繁體中文</option>
+            <option value="jp">日本語</option>
+        </select>
+    </div>
+    
+    <div id="tutorialArea" class="tutorial"></div>
+
+    <div id="statusMsg">Loading...</div>
+    
+    <div class="paper">
+        <div id="uploadArea">
+            <div class="file-box">
+                <input type="file" id="fileInput">
+                <p id="uploadHint" style="font-size: 13px; color: #666; margin-top: 10px;"></p>
+            </div>
+        </div>
+
+        <div class="controls" id="uiControls">
+            <input type="text" id="searchBar">
+            <select id="sortOrder"></select>
+        </div>
+        <div id="noteList"></div>
+    </div>
+</div>
+
+<div id="editorModal" class="modal">
+    <div class="modal-content">
+        <span class="close-btn" onclick="closeNote()">×</span>
+        <textarea id="noteEditor" spellcheck="false"></textarea>
+        <div class="toolbar-grid" id="editorToolbar"></div>
+    </div>
+</div>
+
+<script>
+    let SQL = null;
+    let allNotes = [];
+    let currentNoteId = null;
+    let historyStack = [];
+    let historyIdx = -1;
+
+    const i18n = {
+        en: {
+            tutorial: `1. Extract the file from <span class="key">\\var\\mobile\\Library\\Notes\\note.sqlite</span> using a file manager<br>2. Convert the file to <span class="key">.csv</span> or upload the <span class="key">.sqlite</span> file directly<br>3. Browse the menu content to <span class="key">Copy</span> and <span class="key">Edit</span>`,
+            uploadHint: "Click to select file",
+            searchPlaceholder: "Search notes...",
+            statusReady: "Engine ready, please upload file",
+            statusLoaded: (n) => `Successfully loaded ${n} notes`,
+            sortNew: "Sort: Newest First",
+            sortOld: "Sort: Oldest First",
+            sortAZ: "Title: A → Z",
+            sortZA: "Title: Z → A",
+            copy: "Copy",
+            undo: "Undo",
+            redo: "Redo",
+            reset: "Reset",
+            copyFull: "Copy All",
+            copied: "Copied to clipboard",
+            dbError: "Compatible database table not found."
+        },
+        zh: {
+            tutorial: `1. 使用檔案管理器從 <span class="key">\\var\\mobile\\Library\\Notes\\note.sqlite</span> 提取檔案<br>2. 使用工具將檔案轉換成 <span class="key">.csv</span> 或直接上傳 <span class="key">.sqlite</span> 檔案<br>3. 瀏覽選單的內容並進行 <span class="key">複製</span> 與 <span class="key">編輯</span>`,
+            uploadHint: "請點擊選擇檔案",
+            searchPlaceholder: "搜尋內容...",
+            statusReady: "引擎就緒，請上傳檔案",
+            statusLoaded: (n) => `已成功讀取 ${n} 則備忘錄`,
+            sortNew: "排序：最新優先",
+            sortOld: "排序：最舊優先",
+            sortAZ: "標題：A → Z",
+            sortZA: "標題：Z → A",
+            copy: "複製",
+            undo: "還原",
+            redo: "重做",
+            reset: "重設",
+            copyFull: "複製全文",
+            copied: "已複製到剪貼簿",
+            dbError: "無法在數據庫中找到備忘錄表格。"
+        },
+        jp: {
+            tutorial: `1. ファイルマネージャーを使用して <span class="key">\\var\\mobile\\Library\\Notes\\note.sqlite</span> からファイルを抽出します<br>2. ファイルを <span class="key">.csv</span> に変換するか、<span class="key">.sqlite</span> ファイルを直接アップロードします<br>3. メニュー内容を閲覧し、<span class="key">コピー</span> と <span class="key">編輯</span> を行います`,
+            uploadHint: "ファイルを選択してください",
+            searchPlaceholder: "メモを検索...",
+            statusReady: "エンジン準備完了、アップロードしてください",
+            statusLoaded: (n) => `${n} 件のメモを読み込みました`,
+            sortNew: "並び替え：新しい順",
+            sortOld: "並び替え：古い順",
+            sortAZ: "タイトル：A → Z",
+            sortZA: "タイトル：Z → A",
+            copy: "コピー",
+            undo: "戻す",
+            redo: "やり直し",
+            reset: "リセット",
+            copyFull: "全文コピー",
+            copied: "クリップボードにコピーしました",
+            dbError: "互換性のあるテーブルが見つかりませんでした。"
+        }
+    };
+
+    function changeLang() {
+        const lang = document.getElementById('langSelect').value;
+        const t = i18n[lang];
+        document.getElementById('tutorialArea').innerHTML = t.tutorial;
+        document.getElementById('uploadHint').innerText = t.uploadHint;
+        document.getElementById('searchBar').placeholder = t.searchPlaceholder;
+        if (allNotes.length === 0) document.getElementById('statusMsg').innerText = t.statusReady;
+        else document.getElementById('statusMsg').innerText = t.statusLoaded(allNotes.length);
+        
+        const sort = document.getElementById('sortOrder');
+        const currentSort = sort.value || 'newFirst';
+        sort.innerHTML = `<option value="newFirst">${t.sortNew}</option><option value="oldFirst">${t.sortOld}</option><option value="alphaAZ">${t.sortAZ}</option><option value="alphaZA">${t.sortZA}</option>`;
+        sort.value = currentSort;
+
+        document.getElementById('editorToolbar').innerHTML = `
+            <button class="copy-full-btn" onclick="copyNote()">${t.copyFull}</button>
+            <button onclick="undo()">${t.undo}</button>
+            <button onclick="redo()">${t.redo}</button>
+            <button class="reset-btn" onclick="resetNote()">${t.reset}</button>
+        `;
+        renderNotes();
+    }
+
+    initSqlJs({ locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.wasm` }).then(sql => {
+        SQL = sql;
+        document.getElementById('progressBar').style.width = '100%';
+        changeLang();
+        setTimeout(() => document.getElementById('loadingLayer').style.display = 'none', 500);
+    });
+
+    document.getElementById('fileInput').onchange = function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        const name = file.name.toLowerCase();
+
+        if (name.endsWith('.csv')) {
+            reader.onload = (ev) => parseCSV(ev.target.result);
+            reader.readAsText(file);
+        } else {
+            reader.onload = function() {
+                try {
+                    const db = new SQL.Database(new Uint8Array(reader.result));
+                    const res = db.exec("SELECT b.ZCONTENT, n.Z_PK FROM ZNOTEBODY b JOIN ZNOTE n ON b.ZOWNER = n.Z_PK;");
+                    if (res.length > 0) {
+                        allNotes = res[0].values.map(row => {
+                            let text = cleanHTML(row[0] || "");
+                            return { id: row[1], content: text, original: text, title: text.split('\n')[0] || "No Title", sortKey: row[1] };
+                        });
+                        finishLoading();
+                    } else { alert(i18n[document.getElementById('langSelect').value].dbError); }
+                } catch (err) { alert(err.message); }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+    };
+
+    function parseCSV(str) {
+        let lines = str.split(/\r?\n/).filter(l => l.trim());
+        // 核心修正：移除 CSV 第一行 (ZCONTENT 表頭)
+        if (lines.length > 0) lines.shift(); 
+        
+        allNotes = lines.map((line, i) => {
+            let text = cleanHTML(line.replace(/^"|"$/g, '').replace(/""/g, '"'));
+            return { id: i, content: text, original: text, title: text.split('\n')[0] || "Note", sortKey: i };
+        });
+        finishLoading();
+    }
+
+    function cleanHTML(html) {
+        return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim();
+    }
+
+    function finishLoading() {
+        const tutorial = document.getElementById('tutorialArea');
+        tutorial.style.opacity = '0';
+        setTimeout(() => tutorial.style.display = 'none', 500);
+        document.getElementById('uploadArea').style.display = 'none';
+        document.getElementById('uiControls').style.display = 'flex';
+        changeLang();
+    }
+
+    function renderNotes() {
+        const lang = document.getElementById('langSelect').value;
+        const term = document.getElementById('searchBar').value.toLowerCase();
+        const sort = document.getElementById('sortOrder').value;
+        let list = allNotes.filter(n => n.content.toLowerCase().includes(term));
+
+        if (sort === 'newFirst') list.sort((a,b) => b.sortKey - a.sortKey);
+        else if (sort === 'oldFirst') list.sort((a,b) => a.sortKey - b.sortKey);
+        else if (sort === 'alphaAZ') list.sort((a,b) => a.title.localeCompare(b.title, 'zh-Hant'));
+        else if (sort === 'alphaZA') list.sort((a,b) => b.title.localeCompare(a.title, 'zh-Hant'));
+
+        const container = document.getElementById('noteList');
+        container.innerHTML = '';
+        list.forEach(n => {
+            const div = document.createElement('div');
+            div.className = 'note-item';
+            div.innerHTML = `
+                <div class="note-info" onclick="openNote(${n.id})">
+                    <span class="note-title">${n.title}</span>
+                </div>
+                <button class="list-copy-btn" onclick="copyDirect(\`${n.content.replace(/[`\\$]/g, '\\$&')}\`)">${i18n[lang].copy}</button>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    function openNote(id) {
+        currentNoteId = id;
+        const note = allNotes.find(n => n.id === id);
+        const ed = document.getElementById('noteEditor');
+        ed.value = note.content;
+        historyStack = [ed.value];
+        historyIdx = 0;
+        document.getElementById('editorModal').style.display = 'flex';
+    }
+
+    function resetNote() {
+        const note = allNotes.find(n => n.id === currentNoteId);
+        if (note) {
+            const ed = document.getElementById('noteEditor');
+            ed.value = note.original;
+            historyStack = [ed.value];
+            historyIdx = 0;
+        }
+    }
+
+    document.getElementById('noteEditor').oninput = function() {
+        historyIdx++;
+        if (historyIdx < historyStack.length) historyStack.splice(historyIdx);
+        historyStack.push(this.value);
+    };
+
+    function undo() { if (historyIdx > 0) document.getElementById('noteEditor').value = historyStack[--historyIdx]; }
+    function redo() { if (historyIdx < historyStack.length - 1) document.getElementById('noteEditor').value = historyStack[++historyIdx]; }
+    function closeNote() { document.getElementById('editorModal').style.display = 'none'; }
+    function copyNote() { copyDirect(document.getElementById('noteEditor').value); }
+    function copyDirect(text) {
+        navigator.clipboard.writeText(text).then(() => {
+            alert(i18n[document.getElementById('langSelect').value].copied);
+        });
+    }
+
+    document.getElementById('searchBar').oninput = renderNotes;
+    document.getElementById('sortOrder').onchange = renderNotes;
+</script>
+</body>
+</html>
