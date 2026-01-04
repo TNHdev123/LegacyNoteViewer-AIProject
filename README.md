@@ -1,4 +1,4 @@
-# Legacy Note Viewer-AI-Project
+# Legacy Note Viewer - AI Project
 View Legacy iOS Apple Official Note App Notes on Your Bowser
 
 # Download and Use
